@@ -17,11 +17,14 @@ type File struct {
 	FileData string
 }
 
-func saveFilesToDB(files []File) {
+
+
+func indexerEngine(rootPath string) {
 	mongoURI := os.Getenv("MONGO_URI")
 	if mongoURI == "" {
 		log.Fatal("MONGO_URI not set in environment")
 	}
+
 	// Set client options
 	clientOptions := options.Client().ApplyURI(mongoURI)
 
@@ -42,52 +45,38 @@ func saveFilesToDB(files []File) {
 	// Get a handle for your collection
 	collection := client.Database("tesseract").Collection("images")
 
-	// Insert multiple documents
-	var insertData []interface{}
-	for _, file := range files {
-		insertData = append(insertData, file)
-	}
-	
-	_, err = collection.InsertMany(context.TODO(), insertData)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Close the connection
-	err = client.Disconnect(context.TODO())
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("Connection to MongoDB closed.")
-}
-
-func folderCrawler(rootPath string) []File {
-	var jpegFiles []File
-	err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Printf("error accessing path %q: %v\n", path, err)
 			return err
 		}
 
 		if !info.IsDir() && strings.HasSuffix(strings.ToLower(info.Name()), ".jpeg") {
-			fileData,_ := extractText(path)
-			jpegFiles = append(jpegFiles, File{
+			fileData, err := extractText(path)
+			if err != nil {
+				fmt.Printf("error extracting text from %q: %v\n", path, err)
+				return err
+			}
+
+			file := File{
 				FileName: info.Name(),
 				FilePath: path,
 				FileData: fileData,
-			})
-		}
-		
+			}
 
-		return nil
+			// Insert the File data into MongoDB
+			_, err = collection.InsertOne(context.TODO(), file)
+			if err != nil {
+				fmt.Printf("error inserting data into MongoDB: %v\n", err)
+				return err
+			}
+		}
+		return nil // Important to return nil if no error occurred
 	})
+
 	if err != nil {
 		fmt.Printf("error walking the path %v: %v\n", rootPath, err)
 	}
-	return jpegFiles
 }
 
-func indexerEngine(rootPath string){
-	jpegFiles:=folderCrawler(rootPath)
-	saveFilesToDB(jpegFiles)
-}
+
