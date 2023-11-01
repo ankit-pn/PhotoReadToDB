@@ -63,13 +63,16 @@ func indexerEngine(rootPath string) {
 				FilePath: path,
 				FileData: fileData,
 			}
-
+			// Log the entire file struct to the terminal
+            fmt.Printf("Processed File: %+v\n", file)
 			// Insert the File data into MongoDB
 			_, err = collection.InsertOne(context.TODO(), file)
 			if err != nil {
 				fmt.Printf("error inserting data into MongoDB: %v\n", err)
 				return err
 			}
+			 // Log successful saving to the terminal
+			 fmt.Println("Successfully saved to MongoDB:", file.FileName)
 		}
 		return nil // Important to return nil if no error occurred
 	})
