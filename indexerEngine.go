@@ -85,7 +85,8 @@ func indexerEngine(rootPath string) {
 		go worker(filesChan, &wg, collection)
 	}
 
-	err = filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
+	// Walking the directory structure and sending files to the channel
+	walkErr := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Printf("error accessing path %q: %v\n", path, err)
 			return err
@@ -97,10 +98,15 @@ func indexerEngine(rootPath string) {
 		return nil
 	})
 
-	close(filesChan)  // Close the channel when file listing is done
-	wg.Wait()         // Wait for all workers to finish
-
-	if err != nil {
-		fmt.Printf("error walking the path %v: %v\n", rootPath, err)
+	// Handle potential walk error
+	if walkErr != nil {
+		fmt.Printf("error walking the path %v: %v\n", rootPath, walkErr)
+		// You might want to signal your workers to stop processing at this point.
 	}
+
+	// Safely close the filesChan when all the files have been sent to it
+	defer close(filesChan)
+
+	// Wait for all workers to finish
+	wg.Wait()
 }
