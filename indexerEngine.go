@@ -12,7 +12,16 @@ import (
 	"context"
 	"sync"
 	"github.com/otiai10/gosseract/v2"
+	_ "net/http/pprof"
 )
+
+
+type File struct {
+	FileName string
+	FilePath string
+	FileData string
+}
+
 
 
 const MaxWorkers = 12
@@ -26,6 +35,7 @@ func worker(filesChan <-chan string, wg *sync.WaitGroup, collection *mongo.Colle
 	defer client.Close()
 	client.SetLanguage("eng", "hin", "urd") // Set the languages once
     for path := range filesChan {
+		fmt.Println("Processing file:", path)
 		fileData, err := extractTextWithClient(client, path) // Use the persistent client
 		if err != nil {
 			errChan <- fmt.Errorf("error extracting text from %q: %w", path, err)
@@ -90,11 +100,19 @@ func indexerEngine(rootPath string) {
     var wg sync.WaitGroup
     ctx, cancel := context.WithCancel(context.Background())
 	errChan := make(chan error, MaxWorkers)
+
+	go func() {
+        for err := range errChan {
+            log.Println("Error received:", err)
+        }
+    }()
     // Start workers
     for i := 0; i < MaxWorkers; i++ {
         wg.Add(1)
         go worker(filesChan, &wg, collection, ctx,errChan)
     }
+
+
 
     // Walking the directory structure and sending files to the channel
     walkErr := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
@@ -115,5 +133,6 @@ func indexerEngine(rootPath string) {
 
     close(filesChan)
     wg.Wait()
+	close(errChan) 
     cancel() // Cancel the context to free resources
 }

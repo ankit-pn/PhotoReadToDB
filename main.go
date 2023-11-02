@@ -4,18 +4,9 @@ import (
 	"github.com/joho/godotenv"
 	"os"
 	"log"
-	
+	_ "net/http/pprof"
+	"net/http"
 )
-
-
-
-type File struct {
-	FileName string
-	FilePath string
-	FileData string
-}
-
-
 
 
 func init() {
@@ -26,9 +17,16 @@ func init() {
 }
 
 func main() {
+	go func() {
+		log.Println("Profiling server running on http://localhost:6060")
+		if err := http.ListenAndServe("localhost:6060", nil); err != nil {
+			log.Fatalf("Error starting profiling server: %v", err)
+		}
+	}()
 	rootPath := os.Getenv("ROOT_PATH")
 	if rootPath == "" {
 		log.Fatal("MONGO_URI not set in environment")
 	}
+	
 	indexerEngine(rootPath)
 }
