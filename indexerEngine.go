@@ -14,8 +14,8 @@ import (
 )
 
 
-const MaxWorkers = 16
-const batchSize = 10
+const MaxWorkers = 12
+const batchSize = 5
 
 func worker(filesChan <-chan string, wg *sync.WaitGroup, collection *mongo.Collection, ctx context.Context) {
     defer wg.Done()
