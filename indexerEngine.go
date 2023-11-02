@@ -11,40 +11,42 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/writeconcern"
 	"context"
 	"sync"
+	"github.com/otiai10/gosseract/v2"
 )
 
 
 const MaxWorkers = 12
 const batchSize = 5
 
-func worker(filesChan <-chan string, wg *sync.WaitGroup, collection *mongo.Collection, ctx context.Context) {
+func worker(filesChan <-chan string, wg *sync.WaitGroup, collection *mongo.Collection, ctx context.Context, errChan chan<- error) {
     defer wg.Done()
     batch := make([]interface{}, 0, batchSize)
-
+	// Initialize the gosseract client once per worker
+	client := gosseract.NewClient()
+	defer client.Close()
+	client.SetLanguage("eng", "hin", "urd") // Set the languages once
     for path := range filesChan {
-        fileData, err := extractText(path) // extractText needs to be defined
-        if err != nil {
-            fmt.Printf("error extracting text from %q: %v\n", path, err)
-            continue
-        }
+		fileData, err := extractTextWithClient(client, path) // Use the persistent client
+		if err != nil {
+			errChan <- fmt.Errorf("error extracting text from %q: %w", path, err)
+			continue
+		}
 
-        fileName := filepath.Base(path)
-        file := File{
-            FileName: fileName,
-            FilePath: path,
-            FileData: fileData,
-        }
+		file := File{
+			FileName: filepath.Base(path),
+			FilePath: path,
+			FileData: fileData,
+		}
 
-        batch = append(batch, file)
+		batch = append(batch, file)
 
-        if len(batch) >= batchSize {
-            if _, err = collection.InsertMany(ctx, batch); err != nil {
-                fmt.Printf("error inserting batch into MongoDB: %v\n", err)
-            }
-            // Clear the batch slice for next batch
-            batch = batch[:0]
-        }
-    }
+		if len(batch) >= batchSize {
+			if _, err := collection.InsertMany(ctx, batch); err != nil {
+				errChan <- fmt.Errorf("error inserting batch into MongoDB: %w", err)
+			}
+			batch = batch[:0]
+		}
+	}
 
     // Insert any remaining files
     if len(batch) > 0 {
@@ -87,11 +89,11 @@ func indexerEngine(rootPath string) {
     filesChan := make(chan string, MaxWorkers)
     var wg sync.WaitGroup
     ctx, cancel := context.WithCancel(context.Background())
-
+	errChan := make(chan error, MaxWorkers)
     // Start workers
     for i := 0; i < MaxWorkers; i++ {
         wg.Add(1)
-        go worker(filesChan, &wg, collection, ctx)
+        go worker(filesChan, &wg, collection, ctx,errChan)
     }
 
     // Walking the directory structure and sending files to the channel
